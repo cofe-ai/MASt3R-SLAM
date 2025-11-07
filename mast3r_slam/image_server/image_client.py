@@ -4,21 +4,16 @@ import numpy as np
 import time
 import struct
 from collections import deque
-from multiprocessing import shared_memory
 import logging_mp
 logger_mp = logging_mp.get_logger(__name__)
 
 class ImageClient:
-    def __init__(self, tv_img_shape = None, tv_img_shm_name = None, wrist_img_shape = None, wrist_img_shm_name = None,
+    def __init__(self, tv_img_array = None, wrist_img_array = None,
                        image_show = False, server_address = "192.168.123.164", port = 5555, Unit_Test = False):
         """
-        tv_img_shape: User's expected head camera resolution shape (H, W, C). It should match the output of the image service terminal.
+        tv_img_array: User's expected head camera ndarray with shape (H, W, C). It should match the output of the image service terminal.
 
-        tv_img_shm_name: Shared memory is used to easily transfer images across processes to the Vuer.
-
-        wrist_img_shape: User's expected wrist camera resolution shape (H, W, C). It should maintain the same shape as tv_img_shape.
-
-        wrist_img_shm_name: Shared memory is used to easily transfer images.
+        wrist_img_array: User's expected wrist camera ndarray with shape (H, W, C). It should maintain the same shape as tv_img_array.
 
         image_show: Whether to display received images in real time.
 
@@ -34,20 +29,8 @@ class ImageClient:
         self._server_address = server_address
         self._port = port
 
-        self.tv_img_shape = tv_img_shape
-        self.wrist_img_shape = wrist_img_shape
-
-        self.tv_enable_shm = False
-        if self.tv_img_shape is not None and tv_img_shm_name is not None:
-            self.tv_image_shm = shared_memory.SharedMemory(name=tv_img_shm_name)
-            self.tv_img_array = np.ndarray(tv_img_shape, dtype = np.uint8, buffer = self.tv_image_shm.buf)
-            self.tv_enable_shm = True
-
-        self.wrist_enable_shm = False
-        if self.wrist_img_shape is not None and wrist_img_shm_name is not None:
-            self.wrist_image_shm = shared_memory.SharedMemory(name=wrist_img_shm_name)
-            self.wrist_img_array = np.ndarray(wrist_img_shape, dtype = np.uint8, buffer = self.wrist_image_shm.buf)
-            self.wrist_enable_shm = True
+        self.tv_img_array = tv_img_array
+        self.wrist_img_array = wrist_img_array
 
         # Performance evaluation parameters
         self._enable_performance_eval = Unit_Test
@@ -121,10 +104,6 @@ class ImageClient:
         self._context.term()
         if self._image_show:
             cv2.destroyAllWindows()
-        if self.tv_enable_shm:
-            self.tv_image_shm.close()
-        if self.wrist_enable_shm:
-            self.wrist_image_shm.close()
         logger_mp.info("Image client has been closed.")
 
 
@@ -162,11 +141,11 @@ class ImageClient:
                     logger_mp.warning("[Image Client] Failed to decode image.")
                     continue
 
-                if self.tv_enable_shm:
-                    np.copyto(self.tv_img_array, np.array(current_image[:, :self.tv_img_shape[1]]))
+                if self.tv_img_array is not None:
+                    np.copyto(self.tv_img_array, np.array(current_image[:, :self.tv_img_array.shape[1]]))
 
-                if self.wrist_enable_shm:
-                    np.copyto(self.wrist_img_array, np.array(current_image[:, -self.wrist_img_shape[1]:]))
+                if self.wrist_img_array is not None:
+                    np.copyto(self.wrist_img_array, np.array(current_image[:, -self.wrist_img_array.shape[1]:]))
 
                 if self._image_show:
                     height, width = current_image.shape[:2]

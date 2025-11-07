@@ -3,6 +3,8 @@ import re
 import cv2
 from natsort import natsorted
 import numpy as np
+import time
+import threading
 import torch
 import pyrealsense2 as rs
 import yaml
@@ -228,6 +230,43 @@ class Webcam(MonocularDataset):
         return img
 
 
+class ImageClient(MonocularDataset):
+    def __init__(self, server_ip="192.168.123.164", server_port=5555):
+        super().__init__()
+        from .image_server.image_client import ImageClient
+        self.use_calibration = False
+        self.dataset_path = None
+        self.save_results = False
+        self.h, self.w, self.c = 480, 640, 3
+        self.tv_image_array = np.zeros((self.h, self.w, self.c), dtype=np.uint8)
+        self.img_client = ImageClient(
+            tv_img_array=self.tv_image_array,
+            image_show=False,
+            server_address=server_ip,
+            port=server_port,
+            Unit_Test=False,
+        )
+        self.image_receive_thread = threading.Thread(target=self.img_client.receive_process, daemon=True)
+        self.image_receive_thread.start()
+        self.last_read_time = 0
+
+    def __len__(self):
+        return 999999
+
+    def get_timestamp(self, idx):
+        return self.timestamps[idx]
+
+    def read_img(self, idx):
+        delta = time.time() - self.last_read_time
+        if delta < 1.0 / 30:
+            time.sleep(1.0 / 30 - delta)
+        self.last_read_time = time.time()
+        img = self.tv_image_array.copy()
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        self.timestamps.append(idx / 30)
+        return img
+
+
 class MP4Dataset(MonocularDataset):
     def __init__(self, dataset_path):
         super().__init__()
@@ -331,6 +370,8 @@ def load_dataset(dataset_path):
         return RealsenseDataset()
     if "webcam" in split_dataset_type:
         return Webcam()
+    if "imgserver" in split_dataset_type:
+        return ImageClient(split_dataset_type[-1])
 
     ext = split_dataset_type[-1].split(".")[-1]
     if ext in ["mp4", "avi", "MOV", "mov"]:
